@@ -4,6 +4,31 @@ This Grok Build plugin fetches `GET /v1/models` from CLIProxyAPI and maintains o
 clearly marked block in the Grok `config.toml`. It adds model context windows and explicit
 reasoning fields, including `grok-4.5` with default `xhigh` effort.
 
+This repository is the plugin source; it is distributed through the
+[LinaLab Grok Marketplace](https://github.com/islee23520/linalab-grok-marketplace), where it is
+pinned as a git submodule.
+
+## Install
+
+Install from the marketplace:
+
+```bash
+grok plugin marketplace add https://github.com/islee23520/linalab-grok-marketplace.git
+grok plugin install cliproxy-api-provider --trust
+grok plugin enable cliproxy-api-provider
+```
+
+Or install directly from this repository:
+
+```bash
+grok plugin install https://github.com/islee23520/cliproxy-api-provider.git --trust
+grok plugin enable cliproxy-api-provider
+```
+
+Grok keeps installed plugins disabled by default, so the `enable` step is required in addition to
+`--trust`. Start CLIProxyAPI on `http://127.0.0.1:8317/v1` and set `CLIPROXY_API_KEY`, then run
+`/cliproxy-sync` or start a new Grok session.
+
 ## Commands
 
 ```bash
@@ -88,3 +113,22 @@ Also remove the provider-owned `models_base_url` assignment from `[endpoints]`; 
 `[subagents.models]`. Leave every unrelated key and nested table in place.
 
 Backups and plugin data may then be deleted manually if no longer needed.
+
+## Development
+
+```bash
+bun install
+bun test             # unit, integration, and e2e (isolated GROK_HOME)
+bun run typecheck
+bun run lint
+bun run format:check
+bun run build        # regenerate dist/cli.mjs
+```
+
+The standalone distribution `dist/cli.mjs` is committed so plugin users only need Node.js, not Bun.
+Recommit it after rebuilding. Development dependencies are exactly pinned. Where the `grok` CLI is
+available, run `grok plugin validate .` and an isolated local install smoke test before handoff.
+
+## License
+
+MIT
