@@ -4,6 +4,13 @@ This Grok Build plugin fetches `GET /v1/models` from CLIProxyAPI and maintains o
 clearly marked block in the Grok `config.toml`. It adds model context windows and explicit
 reasoning fields, including `grok-4.5` with default `xhigh` effort.
 
+**Context windows** come from the shared SSOT
+`~/.agents/references/model-catalog.json` (override with `catalogPath` /
+`MODEL_CATALOG`). Live model **ids** still come from CLIProxy `GET /v1/models`.
+This matches [pi-proxy-models](https://github.com/victormilk/pi-proxy-models) so
+pi and Grok stay aligned on grok-4.5 (500k), glm-5.2 (1M), kimi-k3 (1M), etc.
+
+
 This repository is the plugin source; it is distributed through the
 [LinaLab Grok Marketplace](https://github.com/islee23520/linalab-grok-marketplace), where it is
 pinned as a git submodule.
@@ -62,7 +69,7 @@ Defaults live in `config.json`. Override them without changing the installed plu
 | `timeoutMs` | `4000` | Model-catalog timeout |
 
 Environment overrides: `CLIPROXY_BASE_URL`, `CLIPROXY_API_KEY`, `CLIPROXY_ENV_KEY`,
-`CLIPROXY_TIMEOUT_MS`, `GROK_HOME`, `GROK_CONFIG`, `GROK_PLUGIN_DATA`, and
+`CLIPROXY_TIMEOUT_MS`, `MODEL_CATALOG`, `GROK_HOME`, `GROK_CONFIG`, `GROK_PLUGIN_DATA`, and
 `GROK_PLUGIN_ROOT`. The variable named by `envKey` must contain a non-empty value and its name must
 start with `CLIPROXY_`; high-value provider variables such as `XAI_API_KEY` cannot be selected.
 Non-loopback URLs require `allowRemoteBaseUrl: true`, and catalog requests refuse HTTP redirects so

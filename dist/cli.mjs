@@ -14,7 +14,7 @@ var __export = (target, all) => {
 };
 
 // src/cli.ts
-import path3 from "node:path";
+import path4 from "node:path";
 import { realpath } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -14340,7 +14340,8 @@ var PluginConfigSchema = exports_external.object({
   defaultReasoningEffort: ReasoningEffortSchema.default("xhigh"),
   envKey: exports_external.string().regex(/^[A-Z_][A-Z0-9_]*$/).default("CLIPROXY_API_KEY"),
   timeoutMs: exports_external.number().int().min(100).max(60000).default(4000),
-  webSearch: exports_external.string().min(1).default("grok-4.20-multi-agent-0309")
+  webSearch: exports_external.string().min(1).default("grok-4.20-multi-agent-0309"),
+  catalogPath: exports_external.string().min(1).optional()
 }).strict();
 var EnvironmentSchema = exports_external.object({
   CLIPROXY_API_KEY: exports_external.string().min(1).optional(),
@@ -14350,7 +14351,8 @@ var EnvironmentSchema = exports_external.object({
   GROK_CONFIG: exports_external.string().min(1).optional(),
   GROK_HOME: exports_external.string().min(1).optional(),
   GROK_PLUGIN_DATA: exports_external.string().min(1).optional(),
-  GROK_PLUGIN_ROOT: exports_external.string().min(1).optional()
+  GROK_PLUGIN_ROOT: exports_external.string().min(1).optional(),
+  MODEL_CATALOG: exports_external.string().min(1).optional()
 }).loose();
 async function loadSettings(environment) {
   const parsedEnvironment = EnvironmentSchema.safeParse(environment);
@@ -14395,7 +14397,8 @@ async function loadSettings(environment) {
     dataPath,
     envKey,
     pluginRoot,
-    timeoutMs: env.CLIPROXY_TIMEOUT_MS ?? config2.timeoutMs
+    timeoutMs: env.CLIPROXY_TIMEOUT_MS ?? config2.timeoutMs,
+    catalogPath: env.MODEL_CATALOG ?? config2.catalogPath
   };
 }
 var ModelCatalogSchema = exports_external.object({ data: exports_external.array(exports_external.object({ id: exports_external.string().regex(/^[A-Za-z0-9._:/-]+$/) })) }).strict();
@@ -14488,42 +14491,142 @@ function safeTimestamp(now) {
 }
 
 // src/policy.ts
-var GROK_LARGE = new Set([
-  "grok-4.3",
-  "grok-4.5",
-  "grok-4.20-0309-reasoning",
-  "grok-4.20-0309-non-reasoning",
-  "grok-4.20-multi-agent-0309"
-]);
-function modelPolicy(modelId) {
-  const contextWindow = contextWindowFor(modelId);
-  const supportsBackendSearch = modelId === "grok-4.20-multi-agent-0309";
-  if (/(?:image|imagine|video)/i.test(modelId) || modelId.endsWith("non-reasoning")) {
-    return { contextWindow, reasoning: null, supportsBackendSearch };
+import { homedir as homedir2 } from "node:os";
+import path3 from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+var DEFAULT_CATALOG = path3.join(homedir2(), ".agents", "references", "model-catalog.json");
+function loadModelCatalog(catalogPath) {
+  const p = expandHome(catalogPath ?? process.env["MODEL_CATALOG"] ?? DEFAULT_CATALOG);
+  try {
+    if (!existsSync(p))
+      return { path: p, byId: new Map, ok: false };
+    const json2 = JSON.parse(readFileSync(p, "utf8"));
+    const byId = new Map;
+    for (const [id, meta3] of Object.entries(json2.models ?? {})) {
+      byId.set(id, meta3);
+    }
+    const result = { path: p, byId, ok: true };
+    if (typeof json2.updated === "string" && json2.updated.length > 0) {
+      return { ...result, updated: json2.updated };
+    }
+    return result;
+  } catch {
+    return { path: p, byId: new Map, ok: false };
   }
-  if (modelId === "grok-build-0.1" || modelId === "grok-composer-2.5-fast") {
-    return { contextWindow, reasoning: null, supportsBackendSearch };
-  }
-  const reasoningFamily = /^(?:gpt-5\.|gpt-oss|grok-|claude-|gemini-|glm-)/.test(modelId);
-  if (!reasoningFamily)
-    return { contextWindow, reasoning: null, supportsBackendSearch };
-  const efforts = modelId.startsWith("gpt-") ? ["none", "minimal", "low", "medium", "high", "xhigh"] : ["low", "medium", "high", "xhigh"];
-  const lightweight = /(?:mini|flash|lite|low|air|turbo)/.test(modelId);
-  const defaultEffort = modelId === "grok-4.5" ? "xhigh" : lightweight ? "medium" : "high";
-  return { contextWindow, reasoning: { defaultEffort, efforts }, supportsBackendSearch };
 }
-function contextWindowFor(modelId) {
-  if (modelId.startsWith("gpt-5.3-codex") || modelId.startsWith("codex-"))
+function expandHome(p) {
+  if (p.startsWith("~/"))
+    return path3.join(homedir2(), p.slice(2));
+  return p;
+}
+function lookup(catalog, modelId) {
+  const direct = catalog.byId.get(modelId);
+  if (direct)
+    return { entry: direct, source: "catalog" };
+  if (modelId.includes("/")) {
+    const slug = modelId.split("/").pop();
+    if (slug) {
+      const via = catalog.byId.get(slug);
+      if (via)
+        return { entry: via, source: "catalog-slug" };
+    }
+  }
+  return { source: "heuristic" };
+}
+function heuristicContextWindow(modelId) {
+  const slug = modelId.includes("/") ? modelId.split("/").pop() ?? modelId : modelId;
+  if (slug.startsWith("gpt-5.3-codex") || slug.startsWith("codex-"))
     return 256000;
-  if (modelId.startsWith("gpt-5.") || modelId.startsWith("gpt-oss"))
+  if (slug.startsWith("gpt-5.") || slug.startsWith("gpt-oss"))
     return 400000;
-  if (modelId.startsWith("gpt-image"))
+  if (slug.startsWith("gpt-image"))
     return 128000;
-  if (GROK_LARGE.has(modelId))
-    return 2000000;
-  if (modelId.includes("gemini"))
+  if (slug.includes("gemini"))
     return 1048576;
+  if (slug.includes("grok-4.5"))
+    return 500000;
+  if (slug.includes("grok-4.20") || slug.includes("grok-4.3"))
+    return 1e6;
+  if (slug.includes("grok-build"))
+    return 256000;
+  if (slug.includes("kimi-k3"))
+    return 1048576;
+  if (slug.includes("kimi-k2.5") || slug.includes("kimi-k2.6") || slug.includes("kimi-k2.7") || slug.includes("kimi-k2-thinking"))
+    return 262144;
+  if (slug.includes("kimi-k2"))
+    return 131072;
+  if (slug.includes("glm-5.2"))
+    return 1e6;
+  if (slug.includes("glm-4.6") || slug.includes("glm-4.7") || slug.includes("glm-5"))
+    return 200000;
+  if (slug.includes("glm-4.5"))
+    return 131072;
   return 200000;
+}
+function hardDisableReasoning(modelId) {
+  const slug = modelId.includes("/") ? modelId.split("/").pop() ?? modelId : modelId;
+  if (/(?:image|imagine|video)/i.test(slug))
+    return true;
+  if (slug.endsWith("non-reasoning"))
+    return true;
+  if (slug === "grok-build-0.1" || slug === "grok-composer-2.5-fast")
+    return true;
+  if (slug.startsWith("codex-auto"))
+    return true;
+  return false;
+}
+function defaultEffortFor(slug) {
+  if (slug === "grok-4.5")
+    return "xhigh";
+  if (slug === "grok-4.3" || slug === "grok-4.20-0309-reasoning" || slug === "grok-4.20-multi-agent-0309" || slug.startsWith("kimi-") || /thinking|reason/i.test(slug)) {
+    return "high";
+  }
+  if (slug.endsWith("-mini") || slug.endsWith("-flash") || slug.endsWith("-lite") || slug.endsWith("-low") || slug.endsWith("-air") || slug.endsWith("-turbo") || slug.includes("flash") || slug.includes("ultrafast") || slug.includes("composer")) {
+    return "medium";
+  }
+  return "high";
+}
+function modelPolicy(modelId, catalog = loadModelCatalog()) {
+  const slug = modelId.includes("/") ? modelId.split("/").pop() ?? modelId : modelId;
+  const supportsBackendSearch = modelId === "grok-4.20-multi-agent-0309" || slug === "grok-4.20-multi-agent-0309";
+  const { entry, source } = lookup(catalog, modelId);
+  const contextWindow = entry && typeof entry.contextWindow === "number" && entry.contextWindow > 0 ? entry.contextWindow : heuristicContextWindow(modelId);
+  if (hardDisableReasoning(modelId)) {
+    return { contextWindow, reasoning: null, supportsBackendSearch, source: entry ? source : "heuristic" };
+  }
+  const catSaysNo = entry?.reasoning === false;
+  const catSaysYes = entry?.reasoning === true;
+  const isGpt = slug.startsWith("gpt-5.") || slug.startsWith("gpt-oss");
+  const isGrok = slug.startsWith("grok-");
+  const isClaude = slug.startsWith("claude-");
+  const isGemini = slug.startsWith("gemini-");
+  const isGlm = slug.startsWith("glm-");
+  const isKimi = slug.startsWith("kimi-") || slug.startsWith("moonshot-");
+  const isThinking = /thinking|reason/i.test(slug);
+  const family = isGpt || isGrok || isClaude || isGemini || isGlm || isKimi || isThinking;
+  if (!family && !catSaysYes) {
+    return {
+      contextWindow,
+      reasoning: null,
+      supportsBackendSearch,
+      source: entry ? source : "heuristic"
+    };
+  }
+  if (catSaysNo && !isThinking) {
+    return {
+      contextWindow,
+      reasoning: null,
+      supportsBackendSearch,
+      source: entry ? source : "heuristic"
+    };
+  }
+  const efforts = isGpt ? ["none", "minimal", "low", "medium", "high", "xhigh"] : ["low", "medium", "high", "xhigh"];
+  return {
+    contextWindow,
+    reasoning: { defaultEffort: defaultEffortFor(slug), efforts },
+    supportsBackendSearch,
+    source: entry ? source : "heuristic"
+  };
 }
 
 // src/toml.ts
@@ -14755,7 +14858,7 @@ function usage() {
 `;
 }
 var entrypoint = process.argv[1];
-var isMain = entrypoint !== undefined && await realpath(path3.resolve(entrypoint)) === await realpath(fileURLToPath2(import.meta.url));
+var isMain = entrypoint !== undefined && await realpath(path4.resolve(entrypoint)) === await realpath(fileURLToPath2(import.meta.url));
 if (isMain) {
   try {
     process.exitCode = await run(process.argv.slice(2), process.env);

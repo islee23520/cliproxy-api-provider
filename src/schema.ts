@@ -21,6 +21,7 @@ const PluginConfigSchema = z
       .default("CLIPROXY_API_KEY"),
     timeoutMs: z.number().int().min(100).max(60_000).default(4_000),
     webSearch: z.string().min(1).default("grok-4.20-multi-agent-0309"),
+    catalogPath: z.string().min(1).optional(),
   })
   .strict()
 
@@ -37,6 +38,7 @@ const EnvironmentSchema = z
     GROK_HOME: z.string().min(1).optional(),
     GROK_PLUGIN_DATA: z.string().min(1).optional(),
     GROK_PLUGIN_ROOT: z.string().min(1).optional(),
+    MODEL_CATALOG: z.string().min(1).optional(),
   })
   .loose()
 
@@ -91,6 +93,7 @@ export async function loadSettings(environment: NodeJS.ProcessEnv): Promise<Sett
     envKey,
     pluginRoot,
     timeoutMs: env.CLIPROXY_TIMEOUT_MS ?? config.timeoutMs,
+    catalogPath: env.MODEL_CATALOG ?? config.catalogPath,
   }
 }
 
