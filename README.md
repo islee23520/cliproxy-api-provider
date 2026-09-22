@@ -2,13 +2,14 @@
 
 This Grok Build plugin fetches `GET /v1/models` from CLIProxyAPI and maintains one
 clearly marked block in the Grok `config.toml`. It adds model context windows and explicit
-reasoning fields, including `grok-4.5` with default `xhigh` effort.
+reasoning fields. Grok 4.3, 4.5, 4.6, and 4.7 default to `high` and do not offer `xhigh`.
+Grok 4.20 reasoning ids keep the 1M window and do not send a reasoning effort.
 
 **Context windows** come from the shared SSOT
 `~/.agents/references/model-catalog.json` (override with `catalogPath` /
 `MODEL_CATALOG`). Live model **ids** still come from CLIProxy `GET /v1/models`.
 This matches [pi-proxy-models](https://github.com/victormilk/pi-proxy-models) so
-pi and Grok stay aligned on grok-4.5 (500k), glm-5.2 (1M), kimi-k3 (1M), etc.
+pi and Grok stay aligned on grok-4.5 / 4.6 / 4.7 (500k), grok-4.3 and grok-4.20 (1M), glm-5.2 (1M), kimi-k3 (1M).
 
 
 This repository is the plugin source; it is distributed through the
@@ -64,7 +65,7 @@ Defaults live in `config.json`. Override them without changing the installed plu
 | `envKey` | `CLIPROXY_API_KEY` | Dedicated `CLIPROXY_` environment variable for the bearer key |
 | `defaultModel` | `grok-4.5` | Grok default model |
 | `webSearch` | `grok-4.20-multi-agent-0309` | Backend-search model |
-| `defaultReasoningEffort` | `xhigh` | Default Grok effort |
+| `defaultReasoningEffort` | `high` | Default Grok effort |
 | `apiBackend` | `chat_completions` | Grok backend adapter |
 | `timeoutMs` | `4000` | Model-catalog timeout |
 

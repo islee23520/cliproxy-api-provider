@@ -11,8 +11,12 @@ function catalogOf(entries: Record<string, CatalogEntry>): ModelCatalog {
 }
 
 const REALISTIC = catalogOf({
+  "grok-4.7": { reasoning: true, contextWindow: 500_000 },
+  "grok-4.6": { reasoning: true, contextWindow: 500_000 },
   "grok-4.5": { reasoning: true, contextWindow: 500_000 },
   "grok-4.3": { reasoning: true, contextWindow: 1_000_000 },
+  "grok-4.20-0309-reasoning": { reasoning: true, contextWindow: 1_000_000 },
+  "grok-4.20-multi-agent-0309": { reasoning: true, contextWindow: 1_000_000 },
   "grok-4.20-0309-non-reasoning": { reasoning: false, contextWindow: 1_000_000 },
   "grok-build-0.1": { reasoning: false, contextWindow: 256_000 },
   "glm-5.2": { reasoning: true, contextWindow: 1_000_000 },
@@ -22,11 +26,11 @@ const REALISTIC = catalogOf({
 })
 
 describe("modelPolicy", () => {
-  test("Given grok-4.5 from catalog When policy is resolved Then 500k + xhigh reasoning", () => {
+  test("Given grok-4.5 from catalog When policy is resolved Then 500k and high is the max effort", () => {
     const policy = modelPolicy("grok-4.5", REALISTIC)
     expect(policy).toEqual({
       contextWindow: 500_000,
-      reasoning: { defaultEffort: "xhigh", efforts: ["low", "medium", "high", "xhigh"] },
+      reasoning: { defaultEffort: "high", efforts: ["low", "medium", "high"] },
       supportsBackendSearch: false,
       source: "catalog",
     })
@@ -63,6 +67,37 @@ describe("modelPolicy", () => {
   test("Given grok-build-0.1 When policy is resolved Then reasoning disabled even if docs say yes", () => {
     expect(modelPolicy("grok-build-0.1", REALISTIC).reasoning).toBeNull()
     expect(modelPolicy("grok-build-0.1", REALISTIC).contextWindow).toBe(256_000)
+  })
+
+  test("Given grok 4.3 through 4.7 When policy is resolved Then efforts stop at high", () => {
+    for (const id of ["grok-4.7", "grok-4.6", "grok-4.5", "grok-4.3"]) {
+      const policy = modelPolicy(id, REALISTIC)
+      expect(policy.contextWindow).toBe(id === "grok-4.3" ? 1_000_000 : 500_000)
+      expect(policy.reasoning).toEqual({
+        defaultEffort: "high",
+        efforts: ["low", "medium", "high"],
+      })
+    }
+  })
+
+  test("Given grok 4.20 reasoning ids When policy is resolved Then no effort is sent", () => {
+    for (const id of ["grok-4.20-0309-reasoning", "grok-4.20-multi-agent-0309"]) {
+      const policy = modelPolicy(id, REALISTIC)
+      expect(policy.contextWindow).toBe(1_000_000)
+      expect(policy.reasoning).toBeNull()
+    }
+    expect(modelPolicy("grok-4.20-multi-agent-0309", REALISTIC).supportsBackendSearch).toBe(true)
+  })
+
+  test("Given empty catalog When grok-4.7 resolves Then heuristic 500k and high-only efforts", () => {
+    const empty: ModelCatalog = { path: "none", byId: new Map(), ok: false }
+    const policy = modelPolicy("grok-4.7", empty)
+    expect(policy.contextWindow).toBe(500_000)
+    expect(policy.reasoning).toEqual({
+      defaultEffort: "high",
+      efforts: ["low", "medium", "high"],
+    })
+    expect(policy.source).toBe("heuristic")
   })
 
   test("Given empty catalog When grok-4.5 resolves Then heuristic 500k not 2M", () => {
