@@ -98,8 +98,8 @@ describe("transformConfig", () => {
 
     // Then
     expect(block).toContain("supports_reasoning_effort = true")
-    expect(block).toContain('reasoning_effort = "xhigh"')
-    expect(block).toContain('reasoning_efforts = ["low", "medium", "high", "xhigh"]')
+    expect(block).toContain('reasoning_effort = "high"')
+    expect(block).toContain('reasoning_efforts = ["low", "medium", "high"]')
   })
 
   test("Given catalog omits configured models When block is built Then defaults remain reachable", () => {

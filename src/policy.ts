@@ -2,9 +2,11 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { readFileSync, existsSync } from "node:fs"
 
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "none" | "minimal"
+
 export type ReasoningPolicy = {
   readonly defaultEffort: "low" | "medium" | "high" | "xhigh"
-  readonly efforts: readonly ("low" | "medium" | "high" | "xhigh" | "none" | "minimal")[]
+  readonly efforts: readonly ReasoningEffort[]
 }
 
 export type ModelPolicy = {
@@ -32,7 +34,7 @@ const DEFAULT_CATALOG = path.join(homedir(), ".agents", "references", "model-cat
 
 /** Load vendor-docs catalog SSOT (same file pi-proxy-models / agents use). */
 export function loadModelCatalog(catalogPath?: string): ModelCatalog {
-  const p = expandHome(catalogPath ?? process.env['MODEL_CATALOG'] ?? DEFAULT_CATALOG)
+  const p = expandHome(catalogPath ?? process.env["MODEL_CATALOG"] ?? DEFAULT_CATALOG)
   try {
     if (!existsSync(p)) return { path: p, byId: new Map(), ok: false }
     const json = JSON.parse(readFileSync(p, "utf8")) as {
@@ -58,7 +60,10 @@ function expandHome(p: string): string {
   return p
 }
 
-function lookup(catalog: ModelCatalog, modelId: string): { entry?: CatalogEntry; source: ModelPolicy["source"] } {
+function lookup(
+  catalog: ModelCatalog,
+  modelId: string,
+): { entry?: CatalogEntry; source: ModelPolicy["source"] } {
   const direct = catalog.byId.get(modelId)
   if (direct) return { entry: direct, source: "catalog" }
   if (modelId.includes("/")) {
@@ -78,11 +83,17 @@ function heuristicContextWindow(modelId: string): number {
   if (slug.startsWith("gpt-5.") || slug.startsWith("gpt-oss")) return 400_000
   if (slug.startsWith("gpt-image")) return 128_000
   if (slug.includes("gemini")) return 1_048_576
-  if (slug.includes("grok-4.5")) return 500_000
+  if (slug.includes("grok-4.5") || slug.includes("grok-4.6") || slug.includes("grok-4.7"))
+    return 500_000
   if (slug.includes("grok-4.20") || slug.includes("grok-4.3")) return 1_000_000
   if (slug.includes("grok-build")) return 256_000
   if (slug.includes("kimi-k3")) return 1_048_576
-  if (slug.includes("kimi-k2.5") || slug.includes("kimi-k2.6") || slug.includes("kimi-k2.7") || slug.includes("kimi-k2-thinking"))
+  if (
+    slug.includes("kimi-k2.5") ||
+    slug.includes("kimi-k2.6") ||
+    slug.includes("kimi-k2.7") ||
+    slug.includes("kimi-k2-thinking")
+  )
     return 262_144
   if (slug.includes("kimi-k2")) return 131_072
   if (slug.includes("glm-5.2")) return 1_000_000
@@ -96,13 +107,14 @@ function hardDisableReasoning(modelId: string): boolean {
   if (/(?:image|imagine|video)/i.test(slug)) return true
   if (slug.endsWith("non-reasoning")) return true
   if (slug === "grok-build-0.1" || slug === "grok-composer-2.5-fast") return true
+  if (slug === "grok-4.20-0309-reasoning" || slug === "grok-4.20-multi-agent-0309") return true
   if (slug.startsWith("codex-auto")) return true
   return false
 }
 
 function defaultEffortFor(slug: string): ReasoningPolicy["defaultEffort"] {
-  // Product default for flagship Grok through CLIProxy.
-  if (slug === "grok-4.5") return "xhigh"
+  if (slug === "grok-4.7" || slug === "grok-4.6" || slug === "grok-4.5" || slug === "grok-4.3")
+    return "high"
   if (
     slug === "grok-4.3" ||
     slug === "grok-4.20-0309-reasoning" ||
@@ -132,9 +144,13 @@ function defaultEffortFor(slug: string): ReasoningPolicy["defaultEffort"] {
  * Resolve model policy. Prefer ~/.agents/references/model-catalog.json (vendor docs).
  * Catalog reasoning is advisory; hard excludes (image/video/non-reasoning/proxy rejects) win.
  */
-export function modelPolicy(modelId: string, catalog: ModelCatalog = loadModelCatalog()): ModelPolicy {
+export function modelPolicy(
+  modelId: string,
+  catalog: ModelCatalog = loadModelCatalog(),
+): ModelPolicy {
   const slug = modelId.includes("/") ? (modelId.split("/").pop() ?? modelId) : modelId
-  const supportsBackendSearch = modelId === "grok-4.20-multi-agent-0309" || slug === "grok-4.20-multi-agent-0309"
+  const supportsBackendSearch =
+    modelId === "grok-4.20-multi-agent-0309" || slug === "grok-4.20-multi-agent-0309"
   const { entry, source } = lookup(catalog, modelId)
 
   const contextWindow =
@@ -143,7 +159,12 @@ export function modelPolicy(modelId: string, catalog: ModelCatalog = loadModelCa
       : heuristicContextWindow(modelId)
 
   if (hardDisableReasoning(modelId)) {
-    return { contextWindow, reasoning: null, supportsBackendSearch, source: entry ? source : "heuristic" }
+    return {
+      contextWindow,
+      reasoning: null,
+      supportsBackendSearch,
+      source: entry ? source : "heuristic",
+    }
   }
 
   const catSaysNo = entry?.reasoning === false
@@ -175,9 +196,12 @@ export function modelPolicy(modelId: string, catalog: ModelCatalog = loadModelCa
     }
   }
 
-  const efforts = isGpt
-    ? (["none", "minimal", "low", "medium", "high", "xhigh"] as const)
-    : (["low", "medium", "high", "xhigh"] as const)
+  const efforts: readonly ReasoningEffort[] =
+    slug === "grok-4.7" || slug === "grok-4.6" || slug === "grok-4.5" || slug === "grok-4.3"
+      ? ["low", "medium", "high"]
+      : isGpt
+        ? ["none", "minimal", "low", "medium", "high", "xhigh"]
+        : ["low", "medium", "high", "xhigh"]
 
   return {
     contextWindow,
